@@ -1,0 +1,16 @@
+[package]
+name = "tile-gen"
+authors = ["GlennFolker"]
+description = """
+A simple tool to generate bitmasked sprites
+Inputs must point to valid .png files whose dimensions are squares divisible by 4
+Output file names are the input file names concatenated by `-tiled`"""
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.1", default-features = false, features = ["std", "derive", "error-context", "help", "usage"] }
+hashbrown = "0.13"
+image = { version = "0.24", default-features = false, features = ["png"] }
+rayon = "1.6"
+thiserror = "1.0"
