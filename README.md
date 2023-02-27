@@ -20,7 +20,7 @@ A simple [Rust (🚀)](https://www.rust-lang.org/) project for generating bitmas
 ### Using the Processed Sprite
 - Split your sprites into 47 elements as shown below: <br>
   ![tile-indexing](/example-tiled-indexing.png)
-- Count the mask by using `mask |= 1 << index`; treat `index` as: <br>
+- Count the mask by using `mask |= 1 << (index - 1)`; treat `index` as: <br>
   ![mask-mapping](/mask-mapping.png)
 - The sprite of the tile can be mapped from the `mask` by using `sprites[tiles[mask]]` where `tiles` is an array of the mapping returned by running `tile-gen mapping`:
   ```
