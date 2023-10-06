@@ -1,5 +1,3 @@
-#![feature(path_file_prefix)]
-
 use clap::{
     error::{
         Error as CliError,
@@ -8,11 +6,7 @@ use clap::{
     Parser, Subcommand,
 };
 use hashbrown::HashMap;
-use image::{
-    io::Reader,
-    ImageFormat, ImageError,
-    Rgba, RgbaImage,
-};
+use image::{io::Reader, ImageFormat, ImageError, Rgba, RgbaImage, GenericImageView};
 use rayon::{
     prelude::*,
     ThreadPoolBuilder, ThreadPoolBuildError,
@@ -23,6 +17,7 @@ use std::{
     ffi::{
         OsStr, OsString,
     },
+    fs,
     path::Path,
     process::ExitCode,
 };
@@ -57,6 +52,9 @@ enum Cmd {
         /// Specify the amount of threads to work
         #[arg(short, long)]
         jobs: Option<u8>,
+        /// Output each tile as separated files in a folder, obsoleting --pad and --bleed
+        #[arg(short, long)]
+        separate: bool,
         /// Padding amount, in pixels
         #[arg(short, long, default_value_t = 0)]
         pad: u32,
@@ -92,10 +90,15 @@ fn main() -> ExitCode {
     };
 
     match cli.cmd {
-        Cmd::Proc { jobs, pad, bleed, files, } => {
+        Cmd::Proc { jobs, separate, mut pad, mut bleed, files, } => {
             if bleed > pad {
                 eprintln!("--bleed may not be greater than --pad");
                 return ExitCode::FAILURE;
+            }
+
+            if separate {
+                pad = 0;
+                bleed = 0;
             }
 
             // Initialize global thread pool.
@@ -272,14 +275,43 @@ fn main() -> ExitCode {
                         }
                     }
 
-                    out.save_with_format(
-                        Path::new(&file).with_file_name({
-                            let mut name = OsString::from(Path::new(&file).file_prefix().unwrap());
-                            name.push("-tiled.png");
+                    if separate {
+                        let directory = Path::new(&file).with_file_name({
+                            let mut name = OsString::from(Path::new(&file).file_stem().unwrap());
+                            name.push("-tiled");
                             name
-                        }),
-                        ImageFormat::Png,
-                    ).map_err(|e| err(e, &file))?;
+                        });
+                        fs::remove_dir_all(&directory).map_err(|e| err(e, &file))?;
+                        fs::create_dir(&directory).map_err(|e| err(e, &file))?;
+
+                        for i in 0..12 * 4 {
+                            if i == 47 { break };
+                            let cx = i % 12;
+                            let cy = i / 12;
+
+                            out
+                                .view(cx * cell_size, cy * cell_size, cell_size, cell_size)
+                                .to_image()
+                                .save_with_format(
+                                    {
+                                        let mut name = directory.clone();
+                                        name.push(Path::new(&file).file_stem().unwrap());
+                                        name.as_mut_os_string().push(format!("-{i}.png"));
+                                        name
+                                    },
+                                    ImageFormat::Png,
+                                ).map_err(|e| err(e, &file))?;
+                        }
+                    } else {
+                        out.save_with_format(
+                            Path::new(&file).with_file_name({
+                                let mut name = OsString::from(Path::new(&file).file_stem().unwrap());
+                                name.push("-tiled.png");
+                                name
+                            }),
+                            ImageFormat::Png,
+                        ).map_err(|e| err(e, &file))?;
+                    }
 
                     Ok(())
                 })

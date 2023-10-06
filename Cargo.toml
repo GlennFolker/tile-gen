@@ -4,7 +4,10 @@ authors = ["GlennFolker"]
 description = """
 A simple tool to generate bitmasked sprites
 Inputs must point to valid .png files whose dimensions are squares divisible by 4
-Output file names are the input file names concatenated by `-tiled`"""
+
+There are 2 formats of outputs:
+- Singular; simply concatenated by `-tiled`
+- Separate; each processed tiles are stored in a folder"""
 version = "1.1.0"
 edition = "2021"
 
