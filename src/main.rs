@@ -57,6 +57,12 @@ enum Cmd {
         /// Specify the amount of threads to work
         #[arg(short, long)]
         jobs: Option<u8>,
+        /// Padding amount, in pixels
+        #[arg(short, long, default_value_t = 0)]
+        pad: u32,
+        /// Bleeding amount, in pixels less or equal to padding amount
+        #[arg(short, long, default_value_t = 0)]
+        bleed: u32,
         /// The .png files
         #[arg(required(true))]
         files: Vec<OsString>,
@@ -71,22 +77,27 @@ fn main() -> ExitCode {
 
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
-        Err(e) => match e.kind() {
+        Err(e) => return match e.kind() {
             CliErrorKind::DisplayHelp |
             CliErrorKind::DisplayHelpOnMissingArgumentOrSubcommand |
             CliErrorKind::DisplayVersion => {
                 println!("{e}");
-                return ExitCode::SUCCESS;
+                ExitCode::SUCCESS
             },
             _ => {
                 eprintln!("{e}");
-                return ExitCode::FAILURE;
+                ExitCode::FAILURE
             },
         },
     };
 
     match cli.cmd {
-        Cmd::Proc { jobs, files, } => {
+        Cmd::Proc { jobs, pad, bleed, files, } => {
+            if bleed > pad {
+                eprintln!("--bleed may not be greater than --pad");
+                return ExitCode::FAILURE;
+            }
+
             // Initialize global thread pool.
             if let Err(e) = {
                 let mut builder = ThreadPoolBuilder::new();
@@ -138,6 +149,7 @@ fn main() -> ExitCode {
                     if width != height { return Err(err(TilegenError::NotSquare(width, height), &file)); }
 
                     let cell_size = width / 4;
+                    let padded_size = cell_size + 2 * pad;
 
                     let mut palettes = HashMap::<Rgba<u8>, (u32, u32)>::default();
                     for x in 0..4 {
@@ -152,23 +164,111 @@ fn main() -> ExitCode {
                         }
                     }
 
-                    let out_width = width / 4 * 12;
-                    let mut out = RgbaImage::new(out_width, height);
+                    let out_width = (width / 4 + 2 * pad) * 12;
+                    let out_height = (height / 4 + 2 * pad) * 4;
 
-                    for x in 0..out_width {
-                        for y in 0..height {
-                            let Some(&(sx, sy)) = palettes.get(layout.get_pixel(
-                                x * LAYOUT_WIDTH / out_width,
-                                y * LAYOUT_HEIGHT / height,
-                            )) else { continue };
+                    let mut out = RgbaImage::new(out_width, out_height);
+                    for cx in 0..12 {
+                        for cy in 0..4 {
+                            for rx in 0..cell_size {
+                                for ry in 0..cell_size {
+                                    let Some(&(sx, sy)) = palettes.get(layout.get_pixel(
+                                        (cx * cell_size + rx) * LAYOUT_WIDTH / (width * 3),
+                                        (cy * cell_size + ry) * LAYOUT_HEIGHT / height,
+                                    )) else { continue };
 
-                            out.put_pixel(
-                                x, y,
-                                *image.get_pixel(
-                                    sx + (x % cell_size),
-                                    sy + (y % cell_size),
-                                ),
-                            );
+                                    out.put_pixel(
+                                        pad + cx * padded_size + rx,
+                                        pad + cy * padded_size + ry,
+                                        *image.get_pixel(
+                                            sx + rx,
+                                            sy + ry,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    for b in 0..bleed {
+                        for cx in 0..12 {
+                            for cy in 0..4 {
+                                for x in (pad - b)..(pad + cell_size + b) {
+                                    out.put_pixel(
+                                        cx * padded_size + x,
+                                        cy * padded_size + pad - b - 1,
+                                        *out.get_pixel(
+                                            cx * padded_size + x,
+                                            cy * padded_size + pad - b,
+                                        ),
+                                    );
+
+                                    out.put_pixel(
+                                        cx * padded_size + x,
+                                        (cy + 1) * padded_size - pad + b,
+                                        *out.get_pixel(
+                                            cx * padded_size + x,
+                                            (cy + 1) * padded_size - pad + b - 1,
+                                        ),
+                                    );
+                                }
+
+                                for y in (pad - b)..(pad + cell_size + b) {
+                                    out.put_pixel(
+                                        cx * padded_size + pad - b - 1,
+                                        cy * padded_size + y,
+                                        *out.get_pixel(
+                                            cx * padded_size + pad - b,
+                                            cy * padded_size + y,
+                                        ),
+                                    );
+
+                                    out.put_pixel(
+                                        (cx + 1) * padded_size - pad + b,
+                                        cy * padded_size + y,
+                                        *out.get_pixel(
+                                            (cx + 1) * padded_size - pad + b - 1,
+                                            cy * padded_size + y,
+                                        ),
+                                    );
+                                }
+
+                                out.put_pixel(
+                                    cx * padded_size + pad - b - 1,
+                                    cy * padded_size + pad - b - 1,
+                                    *out.get_pixel(
+                                        cx * padded_size + pad - b,
+                                        cy * padded_size + pad - b,
+                                    ),
+                                );
+
+                                out.put_pixel(
+                                    (cx + 1) * padded_size - pad + b,
+                                    cy * padded_size + pad - b - 1,
+                                    *out.get_pixel(
+                                        (cx + 1) * padded_size - pad + b - 1,
+                                        cy * padded_size + pad - b,
+                                    ),
+                                );
+
+                                out.put_pixel(
+                                    (cx + 1) * padded_size - pad + b,
+                                    (cy + 1) * padded_size - pad + b,
+                                    *out.get_pixel(
+                                        (cx + 1) * padded_size - pad + b - 1,
+                                        (cy + 1) * padded_size - pad + b - 1,
+                                    ),
+                                );
+
+                                out.put_pixel(
+                                    cx * padded_size + pad - b - 1,
+                                    (cy + 1) * padded_size - pad + b,
+                                    *out.get_pixel(
+                                        cx * padded_size + pad - b,
+                                        (cy + 1) * padded_size - pad + b - 1,
+                                    ),
+                                );
+                            }
                         }
                     }
 
