@@ -14,9 +14,7 @@ use rayon::{
 use thiserror::Error;
 use std::{
     io::Error as IoError,
-    ffi::{
-        OsStr, OsString,
-    },
+    ffi::OsString,
     fs,
     path::Path,
     process::ExitCode,
@@ -69,6 +67,7 @@ enum Cmd {
     Mapping,
 }
 
+#[allow(dead_code, unreachable_code)]
 fn main() -> ExitCode {
     const LAYOUT_WIDTH: u32 = 384;
     const LAYOUT_HEIGHT: u32 = 128;
@@ -135,21 +134,20 @@ fn main() -> ExitCode {
 
             let error = files
                 .into_par_iter()
-                .map::<_, Result<(), (String, TilegenError)>>(|file| {
-                    #[inline]
-                    fn err(e: impl Into<TilegenError>, file: &OsStr) -> (String, TilegenError) {
-                        (file.to_string_lossy().into_owned(), e.into())
-                    }
-
+                .map(|file| (|| -> Result<(), TilegenError> {
                     let image = {
-                        let mut reader = Reader::open(Path::new(&file)).map_err(|e| err(e, &file))?;
+                        let mut reader = Reader::open(Path::new(&file))?;
                         reader.set_format(ImageFormat::Png);
-                        reader.decode().map_err(|e| err(e, &file))?
+                        reader.decode()?
                     }.into_rgba8();
 
                     let (width, height) = image.dimensions();
-                    if width % 4 != 0 || height % 4 != 0 { return Err(err(TilegenError::IndivisibleBy4(width, height), &file)); }
-                    if width != height { return Err(err(TilegenError::NotSquare(width, height), &file)); }
+                    if width % 4 != 0 || height % 4 != 0 {
+                        return Err(TilegenError::IndivisibleBy4(width, height));
+                    }
+                    if width != height {
+                        return Err(TilegenError::NotSquare(width, height));
+                    }
 
                     let cell_size = width / 4;
                     let padded_size = cell_size + 2 * pad;
@@ -281,8 +279,9 @@ fn main() -> ExitCode {
                             name.push("-tiled");
                             name
                         });
-                        fs::remove_dir_all(&directory).map_err(|e| err(e, &file))?;
-                        fs::create_dir(&directory).map_err(|e| err(e, &file))?;
+
+                        _ = fs::remove_dir_all(&directory);
+                        fs::create_dir(&directory)?;
 
                         for i in 0..12 * 4 {
                             if i == 47 { break };
@@ -300,7 +299,7 @@ fn main() -> ExitCode {
                                         name
                                     },
                                     ImageFormat::Png,
-                                ).map_err(|e| err(e, &file))?;
+                                )?;
                         }
                     } else {
                         out.save_with_format(
@@ -310,11 +309,11 @@ fn main() -> ExitCode {
                                 name
                             }),
                             ImageFormat::Png,
-                        ).map_err(|e| err(e, &file))?;
+                        )?;
                     }
 
                     Ok(())
-                })
+                })().map_err(|e| (file.to_string_lossy().into_owned(), e)))
                 .fold(
                     || String::new(),
                     |mut message, result| {
