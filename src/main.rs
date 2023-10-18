@@ -17,6 +17,7 @@ use std::{
     ffi::OsString,
     fs,
     path::Path,
+    path::PathBuf,
     process::ExitCode,
 };
 
@@ -59,6 +60,9 @@ enum Cmd {
         /// Bleeding amount, in pixels less or equal to padding amount
         #[arg(short, long, default_value_t = 0)]
         bleed: u32,
+        /// Folder to output separate files into
+        #[arg(short, long)]
+        output_folder: Option<OsString>,
         /// The .png files
         #[arg(required(true))]
         files: Vec<OsString>,
@@ -89,7 +93,7 @@ fn main() -> ExitCode {
     };
 
     match cli.cmd {
-        Cmd::Proc { jobs, separate, mut pad, mut bleed, files, } => {
+        Cmd::Proc { jobs, separate, mut pad, mut bleed, files, output_folder, } => {
             if bleed > pad {
                 eprintln!("--bleed may not be greater than --pad");
                 return ExitCode::FAILURE;
@@ -274,14 +278,24 @@ fn main() -> ExitCode {
                     }
 
                     if separate {
-                        let directory = Path::new(&file).with_file_name({
-                            let mut name = OsString::from(Path::new(&file).file_stem().unwrap());
-                            name.push("-tiled");
-                            name
-                        });
-
-                        _ = fs::remove_dir_all(&directory);
-                        fs::create_dir(&directory)?;
+                        let directory = match output_folder.as_ref() {
+                            Some(out_dir) => {
+                                let directory = PathBuf::from(out_dir);
+                                _ = fs::create_dir(&directory);
+                                directory
+                            }
+                            None => {
+                                let directory: std::path::PathBuf = Path::new(&file).with_file_name({
+                                    let mut name = OsString::from(Path::new(&file).file_stem().unwrap());
+                                    name.push("-tiled");
+                                    name
+                                });
+        
+                                _ = fs::remove_dir_all(&directory);
+                                fs::create_dir(&directory)?;
+                                directory
+                            }
+                        };
 
                         for i in 0..12 * 4 {
                             if i == 47 { break };
